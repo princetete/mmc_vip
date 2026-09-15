@@ -1,12 +1,13 @@
 import os
+import html as html_lib
 import sqlite3
 import logging
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
-    PreCheckoutQueryHandler, ContextTypes, filters
+    ContextTypes, filters
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -19,7 +20,6 @@ BINANCE_AMOUNT = "$20"
 USDT_AMOUNT = "$20"
 USDT_NETWORK = "TRON (TRC20)"
 USDT_ADDRESS = "TYnkPKrWSM4t9pHUEXkpn5RSmaVD88RPaB"
-STARS_AMOUNT = 1500
 
 UPI_QR_PATH = "upi_qr.png"
 USDT_QR_PATH = "usdt_trc20_qr.jpg"
@@ -41,6 +41,8 @@ PRIVATE_CHATS = [
     ("Money Talks", MONEY_TALKS),
     ("Growth Talks", GROWTH_TALKS),
 ]
+
+DIVIDER = "━━━━━━━━━━━━━━━━━━"
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,203 +86,179 @@ def save_screenshot(payment_id, file_id):
     conn.execute("UPDATE payments SET screenshot_file_id=? WHERE id=?", (file_id, payment_id))
     conn.commit(); conn.close()
 
-def save_stars_charge(payment_id, charge_id):
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute("""UPDATE payments SET status=?,telegram_payment_charge_id=? WHERE id=?""",
-                 ("approved", charge_id, payment_id))
-    conn.commit(); conn.close()
-
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 BUY VIP", callback_data="buy")],
-        [InlineKeyboardButton("📚 CATALOGUE", callback_data="catalogue")],
-        [InlineKeyboardButton("⭐ REVIEWS", url=REVIEWS_URL)],
-        [InlineKeyboardButton("📩 CONTACT SUPPORT", url=SUPPORT_URL)],
+        [InlineKeyboardButton("💎  BUY VIP", callback_data="buy")],
+        [InlineKeyboardButton("📚  CATALOGUE", callback_data="catalogue")],
+        [InlineKeyboardButton("⭐  REVIEWS", url=REVIEWS_URL)],
+        [InlineKeyboardButton("📩  CONTACT SUPPORT", url=SUPPORT_URL)],
     ])
 
 def payment_methods_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇮🇳 UPI — ₹1,500", callback_data="pay_upi")],
-        [InlineKeyboardButton("💱 Binance — $20", callback_data="pay_binance")],
-        [InlineKeyboardButton("🪙 USDT — $20", callback_data="pay_usdt")],
-        [InlineKeyboardButton("⭐ Telegram Stars — 1,500", callback_data="pay_stars")],
-        [InlineKeyboardButton("⬅️ BACK", callback_data="back_start")],
+        [InlineKeyboardButton(f"🇮🇳  UPI  —  {UPI_AMOUNT}", callback_data="pay_upi")],
+        [InlineKeyboardButton(f"💱  Binance  —  {BINANCE_AMOUNT}", callback_data="pay_binance")],
+        [InlineKeyboardButton(f"🪙  USDT  —  {USDT_AMOUNT}", callback_data="pay_usdt")],
+        [InlineKeyboardButton("⬅️  BACK", callback_data="back_start")],
     ])
 
 def paid_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ I'VE PAID", callback_data="paid")],
-        [InlineKeyboardButton("⬅️ BACK", callback_data="buy")],
+        [InlineKeyboardButton("✅  I'VE PAID", callback_data="paid")],
+        [InlineKeyboardButton("⬅️  BACK", callback_data="buy")],
     ])
 
-START_TEXT = """👋 Welcome to the VIP Payment Bot
+START_TEXT = f"""<b>👋 Welcome to the VIP Payment Bot</b>
 
-🚀 Your gateway to premium access.
+🚀 <i>Your gateway to premium access</i>
 
-Explore complete collection of premium courses, resources & tools.
+Explore our complete collection of premium courses, resources &amp; tools — all in one place.
 
-Payment methods:
+{DIVIDER}
+<b>💳 PAYMENT METHODS</b>
+{DIVIDER}
 
-🇮🇳 UPI — ₹1,500
-💱 Binance — $20
-🪙 Crypto (USDT) — $20
-⭐ Telegram Stars — 1,500
+🇮🇳  UPI          —  {UPI_AMOUNT}
+💱  Binance      —  {BINANCE_AMOUNT}
+🪙  Crypto (USDT) —  {USDT_AMOUNT}
 
-Active hours:
+{DIVIDER}
+<b>🕒 ACTIVE HOURS</b>
+{DIVIDER}
 
-🇮🇳 India: 05:00 PM – 10:00 PM
-🇬🇧 UK: 12:30 PM – 05:30 PM
-🇺🇸 USA: 07:30 AM – 12:30 PM
-🇦🇪 Gulf: 03:30 PM – 08:30 PM
+🇮🇳 India  :  05:00 PM – 10:00 PM
+🇬🇧 UK     :  12:30 PM – 05:30 PM
+🇺🇸 USA    :  07:30 AM – 12:30 PM
+🇦🇪 Gulf   :  03:30 PM – 08:30 PM
 
-Payment verification notice:
-1–6 hours during active hours.
+⏳ <u>Payment verification</u>: 1–6 hours during active hours.
 """
 
 async def start(update, context):
     context.user_data.clear()
-    await update.message.reply_text(START_TEXT, reply_markup=main_menu_keyboard())
+    await update.message.reply_text(START_TEXT, parse_mode="HTML", reply_markup=main_menu_keyboard())
 
 async def buy(update, context):
     q = update.callback_query
-    if q:
-        await q.answer()
-        await q.edit_message_text(
-            """💎 VIP LIFETIME ACCESS
+    text = f"""<b>💎 VIP LIFETIME ACCESS</b>
 
-Get lifetime access to the complete VIP collection.
+Get lifetime access to the complete VIP collection — once, forever.
 
-━━━━━━━━━━━━━━━━━━
+{DIVIDER}
+<b>💰 PAYMENT OPTIONS</b>
+{DIVIDER}
 
-💰 PAYMENT OPTIONS
+🇮🇳  UPI       —  {UPI_AMOUNT}
+💱  Binance   —  {BINANCE_AMOUNT}
+🪙  USDT       —  {USDT_AMOUNT}
 
-🇮🇳 UPI
-₹1,500
-
-💱 Binance
-$20
-
-🪙 USDT
-$20
-
-⭐ Telegram Stars
-1,500 Stars
-
-━━━━━━━━━━━━━━━━━━
+{DIVIDER}
+<b>✨ WHAT'S INCLUDED</b>
+{DIVIDER}
 
 🔐 Lifetime access
 📚 Courses
 📦 Resources
-🎬 Files & Videos
+🎬 Files &amp; Videos
 💬 Private communities
-""",
-            reply_markup=payment_methods_keyboard())
+"""
+    if q:
+        await q.answer()
+        await q.edit_message_text(text, parse_mode="HTML", reply_markup=payment_methods_keyboard())
     else:
-        await update.message.reply_text("Choose your payment method:",
-                                        reply_markup=payment_methods_keyboard())
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=payment_methods_keyboard())
 
 async def catalogue_command(update, context):
     await catalogue(update, context)
 
 async def reviews_command(update, context):
-    await update.message.reply_text("⭐ Reviews:", reply_markup=InlineKeyboardMarkup(
-        [[InlineKeyboardButton("⭐ VIEW REVIEWS", url=REVIEWS_URL)]]))
+    await update.message.reply_text("⭐ <b>Reviews</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
+        [[InlineKeyboardButton("⭐  VIEW REVIEWS", url=REVIEWS_URL)]]))
 
 async def contact_command(update, context):
-    await update.message.reply_text("📩 Contact support:", reply_markup=InlineKeyboardMarkup(
-        [[InlineKeyboardButton("📩 CONTACT SUPPORT", url=SUPPORT_URL)]]))
+    await update.message.reply_text("📩 <b>Contact Support</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
+        [[InlineKeyboardButton("📩  CONTACT SUPPORT", url=SUPPORT_URL)]]))
 
 async def cancel(update, context):
     context.user_data.clear()
-    await update.message.reply_text("❌ Payment process cancelled.\n\nUse /start to begin again.",
-                                    reply_markup=main_menu_keyboard())
+    await update.message.reply_text("❌ <b>Payment process cancelled.</b>\n\nUse /start to begin again.",
+                                    parse_mode="HTML", reply_markup=main_menu_keyboard())
 
 async def pay_upi(update, context):
     q = update.callback_query; await q.answer()
     context.user_data["payment_method"] = "UPI"
-    caption = f"""🇮🇳 UPI PAYMENT
+    caption = f"""<b>🇮🇳 UPI PAYMENT</b>
 
-Amount: {UPI_AMOUNT}
+💰 Amount: <b>{UPI_AMOUNT}</b>
 
-━━━━━━━━━━━━━━━━━━
+{DIVIDER}
 
-Scan the QR code above
+📷 Scan the QR code above
+        <u>OR</u>
+🆔 UPI ID:
+<code>{UPI_ID}</code>
 
-OR
+{DIVIDER}
 
-UPI ID:
-
-`{UPI_ID}`
-
-━━━━━━━━━━━━━━━━━━
-
-After completing the payment,
-tap **I'VE PAID** below.
+✅ After completing the payment, tap <b>I'VE PAID</b> below.
 """
     if os.path.exists(UPI_QR_PATH):
         with open(UPI_QR_PATH, "rb") as photo:
             await q.message.reply_photo(photo=photo, caption=caption,
-                                         parse_mode="Markdown", reply_markup=paid_keyboard())
+                                         parse_mode="HTML", reply_markup=paid_keyboard())
     else:
-        await q.message.reply_text(caption, parse_mode="Markdown", reply_markup=paid_keyboard())
+        await q.message.reply_text(caption, parse_mode="HTML", reply_markup=paid_keyboard())
 
 async def pay_binance(update, context):
     q = update.callback_query; await q.answer()
     context.user_data["payment_method"] = "Binance"
-    text = f"""💱 BINANCE PAYMENT
+    text = f"""<b>💱 BINANCE PAYMENT</b>
 
-Amount: {BINANCE_AMOUNT}
+💰 Amount: <b>{BINANCE_AMOUNT}</b>
 
-━━━━━━━━━━━━━━━━━━
+{DIVIDER}
 
-Send {BINANCE_AMOUNT} to:
+📤 Send <b>{BINANCE_AMOUNT}</b> to Binance ID:
+<code>{BINANCE_ID}</code>
 
-Binance ID:
+{DIVIDER}
 
-`{BINANCE_ID}`
-
-━━━━━━━━━━━━━━━━━━
-
-After completing the payment,
-tap **I'VE PAID** below.
+✅ After completing the payment, tap <b>I'VE PAID</b> below.
 """
-    await q.message.reply_text(text, parse_mode="Markdown", reply_markup=paid_keyboard())
+    await q.message.reply_text(text, parse_mode="HTML", reply_markup=paid_keyboard())
 
 async def pay_usdt(update, context):
     q = update.callback_query; await q.answer()
     context.user_data["payment_method"] = "USDT"
-    caption = f"""🪙 USDT PAYMENT
+    caption = f"""<b>🪙 USDT PAYMENT</b>
 
-Amount: {USDT_AMOUNT}
+💰 Amount: <b>{USDT_AMOUNT}</b>
+🌐 Network: <b>{USDT_NETWORK}</b>
 
-Network: {USDT_NETWORK}
+{DIVIDER}
 
-━━━━━━━━━━━━━━━━━━
+📤 USDT Address:
+<code>{USDT_ADDRESS}</code>
 
-USDT Address:
+{DIVIDER}
 
-`{USDT_ADDRESS}`
+⚠️ Send only through the <u>TRON (TRC20)</u> network.
 
-━━━━━━━━━━━━━━━━━━
-
-Send only through the TRON (TRC20)
-network.
-
-After completing the payment,
-tap **I'VE PAID** below.
+✅ After completing the payment, tap <b>I'VE PAID</b> below.
 """
     if os.path.exists(USDT_QR_PATH):
         with open(USDT_QR_PATH, "rb") as photo:
             await q.message.reply_photo(photo=photo, caption=caption,
-                                         parse_mode="Markdown", reply_markup=paid_keyboard())
+                                         parse_mode="HTML", reply_markup=paid_keyboard())
     else:
-        await q.message.reply_text(caption, parse_mode="Markdown", reply_markup=paid_keyboard())
+        await q.message.reply_text(caption, parse_mode="HTML", reply_markup=paid_keyboard())
 
 async def paid_button(update, context):
     q = update.callback_query; await q.answer()
     method = context.user_data.get("payment_method")
     if method not in ["UPI", "Binance", "USDT"]:
-        await q.message.reply_text("❌ Payment session expired.\n\nPlease go back and select a payment method again.")
+        await q.message.reply_text("❌ <b>Payment session expired.</b>\n\nPlease go back and select a payment method again.",
+                                    parse_mode="HTML")
         return
     u = q.from_user
     payment_id = create_payment(u.id, u.username, u.first_name, "Lifetime",
@@ -292,29 +270,27 @@ async def paid_button(update, context):
         await q.message.edit_reply_markup(reply_markup=None)
     except Exception as e:
         logger.warning("Could not remove payment buttons: %s", e)
-    await q.message.reply_text("""📸 PAYMENT PROOF
+    await q.message.reply_text(f"""<b>📸 PAYMENT PROOF</b>
 
 Please send a clear screenshot of your payment.
 
-Make sure the screenshot shows:
+Make sure it clearly shows:
+   •  Amount
+   •  Payment status
+   •  Relevant payment details
 
-• Amount
-• Payment status
-• Relevant payment details
+⚠️ <i>Manual verification in progress</i>
 
-⚠️ Manual verification
-
-📸 Send your screenshot below.
-
-You can also send /cancel.
-""")
+📸 Send your screenshot below, or /cancel to stop.
+""", parse_mode="HTML")
 
 async def receive_payment_proof(update, context):
     if not context.user_data.get("awaiting_proof"):
         return
     payment_id = context.user_data.get("payment_id")
     if not payment_id:
-        await update.message.reply_text("❌ Payment session expired.\n\nPlease start again with /start.")
+        await update.message.reply_text("❌ <b>Payment session expired.</b>\n\nPlease start again with /start.",
+                                        parse_mode="HTML")
         context.user_data.clear(); return
     payment = get_payment(payment_id)
     if not payment:
@@ -340,57 +316,54 @@ async def receive_payment_proof(update, context):
     save_screenshot(payment_id, file_id)
     update_payment_status(payment_id, "proof_submitted")
     context.user_data["awaiting_proof"] = False
-    await update.message.reply_text("""✅ PAYMENT PROOF RECEIVED
+    await update.message.reply_text(f"""<b>✅ PAYMENT PROOF RECEIVED</b>
 
-Your payment screenshot has been submitted
-for manual verification.
+Your payment screenshot has been submitted for manual verification.
 
-⏳ Verification may take 1–6 hours during
-active hours.
+⏳ Verification may take <b>1–6 hours</b> during active hours.
 
-You will receive your VIP access automatically
-after approval.
-""")
+🎉 You'll receive your VIP access automatically after approval.
+""", parse_mode="HTML")
+
     u = update.effective_user
-    username = f"@{u.username}" if u.username else "No username"
-    admin_text = f"""💰 NEW PAYMENT PROOF
+    safe_name = html_lib.escape(u.first_name or "")
+    safe_username = html_lib.escape(f"@{u.username}") if u.username else "No username"
+    admin_text = f"""<b>💰 NEW PAYMENT PROOF</b>
 
-Payment ID: #{payment_id}
+🆔 Payment ID: <b>#{payment_id}</b>
 
-👤 User:
-{u.first_name}
+{DIVIDER}
+<b>👤 BUYER DETAILS</b>
+{DIVIDER}
 
-🆔 Telegram ID:
-{u.id}
+Name        :  {safe_name}
+Telegram ID :  <code>{u.id}</code>
+Username    :  {safe_username}
 
-📱 Username:
-{username}
+{DIVIDER}
+<b>💳 PAYMENT DETAILS</b>
+{DIVIDER}
 
-━━━━━━━━━━━━━━━━━━
+Method  :  {payment[6]}
+Amount  :  {payment[5]}
+Plan    :  {payment[4]}
 
-💳 Method:
-{payment[6]}
+{DIVIDER}
 
-💰 Amount:
-{payment[5]}
-
-📦 Plan:
-{payment[4]}
-
-━━━━━━━━━━━━━━━━━━
-
-Please verify the payment.
+👉 Please verify the payment.
 """
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ APPROVE", callback_data=f"approve:{payment_id}"),
-        InlineKeyboardButton("❌ REJECT", callback_data=f"reject:{payment_id}")
+        InlineKeyboardButton("✅  APPROVE", callback_data=f"approve:{payment_id}"),
+        InlineKeyboardButton("❌  REJECT", callback_data=f"reject:{payment_id}")
     ]])
     try:
         if is_document:
             # A document's file_id can't be sent through send_photo.
-            await context.bot.send_document(chat_id=ADMIN_ID, document=file_id, caption=admin_text, reply_markup=kb)
+            await context.bot.send_document(chat_id=ADMIN_ID, document=file_id, caption=admin_text,
+                                             parse_mode="HTML", reply_markup=kb)
         else:
-            await context.bot.send_photo(chat_id=ADMIN_ID, photo=file_id, caption=admin_text, reply_markup=kb)
+            await context.bot.send_photo(chat_id=ADMIN_ID, photo=file_id, caption=admin_text,
+                                          parse_mode="HTML", reply_markup=kb)
     except Exception as e:
         logger.exception("Failed to send payment proof to admin: %s", e)
         # Fallback: at minimum, get a text alert to the admin so the
@@ -398,9 +371,9 @@ Please verify the payment.
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=admin_text + "\n⚠️ Could not attach the screenshot automatically. "
+                text=admin_text + f"\n⚠️ Could not attach the screenshot automatically. "
                                    f"Check payment #{payment_id} in the database.",
-                reply_markup=kb
+                parse_mode="HTML", reply_markup=kb
             )
         except Exception as e2:
             logger.exception("Fallback admin text notification also failed: %s", e2)
@@ -417,41 +390,41 @@ async def create_vip_links(context, payment_id):
 
 async def send_vip_access(context, user_id, payment_id):
     links = await create_vip_links(context, payment_id)
-    buttons = [[InlineKeyboardButton("📚 ACCESS COURSES", url=PUBLIC_COURSES_URL)]]
+    buttons = [[InlineKeyboardButton("📚  ACCESS COURSES", url=PUBLIC_COURSES_URL)]]
     for name, link in links:
-        buttons.append([InlineKeyboardButton(f"🔐 JOIN {name.upper()}", url=link)])
+        buttons.append([InlineKeyboardButton(f"🔐  JOIN {name.upper()}", url=link)])
     await context.bot.send_message(
         chat_id=user_id,
-        text="""🎉 Congratulations on Purchasing VIP!
+        text=f"""<b>🎉 Congratulations on Your VIP Purchase!</b>
 
 Your payment has been successfully verified. ✅
 
-━━━━━━━━━━━━━━━━━━
-
-📚 MATERIALS
+{DIVIDER}
+<b>📚 MATERIALS</b>
+{DIVIDER}
 
 🎓 VIP Courses
 📦 VIP Resources
 
-━━━━━━━━━━━━━━━━━━
-
-🎬 MEDIA
+{DIVIDER}
+<b>🎬 MEDIA</b>
+{DIVIDER}
 
 📁 VIP Files
 🎥 VIP Videos
 
-━━━━━━━━━━━━━━━━━━
-
-💬 CHATTING
+{DIVIDER}
+<b>💬 COMMUNITIES</b>
+{DIVIDER}
 
 💰 Money Talks
 📈 Growth Talks
 
-━━━━━━━━━━━━━━━━━━
+{DIVIDER}
 
-🔐 All links are personal and one-time use.
+🔐 <i>All links are personal and one-time use.</i>
 """,
-        reply_markup=InlineKeyboardMarkup(buttons))
+        parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
 async def approve_payment(update, context):
     q = update.callback_query
@@ -463,9 +436,8 @@ async def approve_payment(update, context):
     payment = get_payment(payment_id)
     if not payment:
         await q.answer(); await q.message.reply_text("❌ Payment not found."); return
-    # BUGFIX: a callback_query can only be answered once. The old code
-    # answered unconditionally, then tried to answer again in these
-    # branches, which raised and could break the flow silently.
+    # A callback_query can only be answered once — check terminal states
+    # before the generic answer() to avoid a second (failing) call.
     if payment[8] == "approved":
         await q.answer("Already approved.", show_alert=True); return
     if payment[8] == "rejected":
@@ -474,13 +446,12 @@ async def approve_payment(update, context):
     try:
         await send_vip_access(context, payment[1], payment_id)
         update_payment_status(payment_id, "approved")
+        approved_text = f"<b>✅ PAYMENT APPROVED</b>\n\n🆔 Payment ID: <b>#{payment_id}</b>\n👤 User ID: <code>{payment[1]}</code>"
         try:
-            await q.edit_message_caption(caption=f"✅ PAYMENT APPROVED\n\nPayment ID: #{payment_id}\nUser ID: {payment[1]}",
-                                         reply_markup=None)
+            await q.edit_message_caption(caption=approved_text, parse_mode="HTML", reply_markup=None)
         except Exception:
             try:
-                await q.edit_message_text(text=f"✅ PAYMENT APPROVED\n\nPayment ID: #{payment_id}\nUser ID: {payment[1]}",
-                                           reply_markup=None)
+                await q.edit_message_text(text=approved_text, parse_mode="HTML", reply_markup=None)
             except Exception: pass
     except Exception as e:
         logger.exception("Approval failed: %s", e)
@@ -496,59 +467,29 @@ async def reject_payment(update, context):
     payment = get_payment(payment_id)
     if not payment:
         await q.answer(); return
-    # BUGFIX: same double-answer issue as approve_payment.
+    # Same double-answer fix as approve_payment.
     if payment[8] in ["approved", "rejected"]:
         await q.answer("Payment already processed.", show_alert=True); return
     await q.answer()
     update_payment_status(payment_id, "rejected")
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("📩 CONTACT SUPPORT", url=SUPPORT_URL)]])
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("📩  CONTACT SUPPORT", url=SUPPORT_URL)]])
     try:
         await context.bot.send_message(chat_id=payment[1],
-            text="""❌ PAYMENT NOT VERIFIED
+            text="""<b>❌ PAYMENT NOT VERIFIED</b>
 
 Unfortunately, we couldn't verify your payment.
 
 If you believe this is a mistake, please contact support.""",
-            reply_markup=kb)
+            parse_mode="HTML", reply_markup=kb)
     except Exception as e:
         logger.warning("Could not notify rejected user: %s", e)
+    rejected_text = f"<b>❌ PAYMENT REJECTED</b>\n\n🆔 Payment ID: <b>#{payment_id}</b>\n👤 User ID: <code>{payment[1]}</code>"
     try:
-        await q.edit_message_caption(caption=f"❌ PAYMENT REJECTED\n\nPayment ID: #{payment_id}\nUser ID: {payment[1]}",
-                                     reply_markup=None)
+        await q.edit_message_caption(caption=rejected_text, parse_mode="HTML", reply_markup=None)
     except Exception:
         try:
-            await q.edit_message_text(text=f"❌ PAYMENT REJECTED\n\nPayment ID: #{payment_id}\nUser ID: {payment[1]}",
-                                       reply_markup=None)
+            await q.edit_message_text(text=rejected_text, parse_mode="HTML", reply_markup=None)
         except Exception: pass
-
-async def pay_stars(update, context):
-    q = update.callback_query; await q.answer()
-    u = q.from_user
-    payment_id = create_payment(u.id, u.username, u.first_name, "Lifetime",
-                                f"{STARS_AMOUNT} Stars", "Telegram Stars")
-    context.user_data["stars_payment_id"] = payment_id
-    await context.bot.send_invoice(
-        chat_id=u.id, title="VIP Lifetime Access",
-        description="Lifetime access to the VIP courses, resources, files, videos and communities.",
-        payload=f"vip_stars:{payment_id}", currency="XTR",
-        prices=[LabeledPrice(label="VIP Lifetime Access", amount=STARS_AMOUNT)])
-
-async def precheckout_callback(update, context):
-    await update.pre_checkout_query.answer(ok=True)
-
-async def successful_payment(update, context):
-    payment = update.message.successful_payment
-    if not payment or not payment.invoice_payload.startswith("vip_stars:"): return
-    try: payment_id = int(payment.invoice_payload.split(":")[1])
-    except Exception: return
-    if not get_payment(payment_id):
-        await update.message.reply_text("❌ Payment record not found. Please contact support."); return
-    try:
-        save_stars_charge(payment_id, payment.telegram_payment_charge_id)
-        await send_vip_access(context, update.effective_user.id, payment_id)
-    except Exception as e:
-        logger.exception("Stars fulfillment failed: %s", e)
-        await update.message.reply_text("✅ Payment received.\n\nThere was a temporary issue generating your VIP access links.\n\nPlease contact support.")
 
 CATALOGUE = {
     "AI": [("AI Automations","https://t.me/VIP_Coursesss/774"),("AI Content Creation","https://t.me/VIP_Coursesss/1129")],
@@ -559,40 +500,39 @@ CATALOGUE = {
     "Content": [("Content Creation","https://t.me/VIP_Coursesss/697"),("Video Editing","https://t.me/VIP_Coursesss/345"),("Graphic Design","https://t.me/VIP_Coursesss/278"),("Filmmaking","https://t.me/VIP_Coursesss/39"),("Animation","https://t.me/VIP_Coursesss/127")],
     "Web & Tech": [("UI/UX","https://t.me/VIP_Coursesss/674"),("SEO","https://t.me/VIP_Coursesss/595")],
     "Personal Development": [("Self Improvement","https://t.me/VIP_Coursesss/450"),("Fitness","https://t.me/VIP_Coursesss/401"),("Self Defence","https://t.me/VIP_Coursesss/161"),("Memory","https://t.me/VIP_Coursesss/221"),("Communication","https://t.me/VIP_Coursesss/90"),("NLP & Hypnosis","https://t.me/VIP_Coursesss/1004"),("Psychology","https://t.me/VIP_Coursesss/628")],
-    "Luxury": [("History Courses","https://t.me/VIP_Coursesss/392"),("Peterson Academy","https://t.me/VIP_Coursesss/1327"),("Andrew Tate — TRW","https://t.me/VIP_Coursesss/1238"),("Iman Gadzhi — Educate IO","https://t.me/VIP_Coursesss/1199"),("Luke Belmar — Capital Club","https://t.me/VIP_Coursesss/1288"),("Business","https://t.me/VIP_Coursesss/931")],
+    "Luxury": [("History Courses","https://t.me/VIP_Coursesss/392"),("Peterson Academy","https://t.me/VIP_Coursesss/1327"),("Andrew Tate — TRW","https://t.me/VIP_Coursesss/1238"),("Iman Gadzhi — Educate IO","https://t.me/VIP_Coursesss/1199"),("Luke Belmar — Capital Club","https://t.me/VIP_Coursesss/1288")],
 }
 
 async def catalogue(update, context):
-    # BUGFIX: this used to assume it was always invoked from a button press
-    # (update.callback_query), which crashed with AttributeError whenever it
-    # was called directly from the /catalogue command (no callback_query).
+    # Handles being called both from a button press (callback_query) and
+    # directly from the /catalogue command (no callback_query).
     q = update.callback_query
-    buttons = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat:{cat}")] for cat in CATALOGUE]
-    buttons.append([InlineKeyboardButton("⬅️ BACK", callback_data="back_start")])
-    text = """📚 VIP COURSES
+    buttons = [[InlineKeyboardButton(f"📂  {cat}", callback_data=f"cat:{cat}")] for cat in CATALOGUE]
+    buttons.append([InlineKeyboardButton("⬅️  BACK", callback_data="back_start")])
+    text = """<b>📚 VIP COURSES</b>
 
-VIP Courses are structured across 40+ sub-topics.
+Our VIP courses are organized across <b>40+ sub-topics</b>.
 
-Choose a category below:
+👇 Choose a category below:
 """
     if q:
         await q.answer()
-        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        await q.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
     else:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
 async def catalogue_category(update, context):
     q = update.callback_query; await q.answer()
     category = q.data.split(":",1)[1]
-    buttons = [[InlineKeyboardButton(f"📘 {name}", url=url)] for name,url in CATALOGUE.get(category,[])]
-    buttons.append([InlineKeyboardButton("⬅️ CATALOGUE", callback_data="catalogue")])
-    await q.edit_message_text(f"📚 {category.upper()}\n\nSelect a sub-topic:",
-                              reply_markup=InlineKeyboardMarkup(buttons))
+    buttons = [[InlineKeyboardButton(f"📘  {name}", url=url)] for name,url in CATALOGUE.get(category,[])]
+    buttons.append([InlineKeyboardButton("⬅️  CATALOGUE", callback_data="catalogue")])
+    await q.edit_message_text(f"<b>📚 {html_lib.escape(category.upper())}</b>\n\n👇 Select a sub-topic:",
+                              parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
 async def back_start(update, context):
     q = update.callback_query; await q.answer()
     context.user_data.clear()
-    await q.edit_message_text(START_TEXT, reply_markup=main_menu_keyboard())
+    await q.edit_message_text(START_TEXT, parse_mode="HTML", reply_markup=main_menu_keyboard())
 
 async def error_handler(update, context):
     logger.exception("Unhandled exception:", exc_info=context.error)
@@ -615,12 +555,9 @@ def main():
     app.add_handler(CallbackQueryHandler(pay_upi, pattern=r"^pay_upi$"))
     app.add_handler(CallbackQueryHandler(pay_binance, pattern=r"^pay_binance$"))
     app.add_handler(CallbackQueryHandler(pay_usdt, pattern=r"^pay_usdt$"))
-    app.add_handler(CallbackQueryHandler(pay_stars, pattern=r"^pay_stars$"))
     app.add_handler(CallbackQueryHandler(paid_button, pattern=r"^paid$"))
     app.add_handler(CallbackQueryHandler(approve_payment, pattern=r"^approve:"))
     app.add_handler(CallbackQueryHandler(reject_payment, pattern=r"^reject:"))
-    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_payment_proof))
     app.add_error_handler(error_handler)
 
