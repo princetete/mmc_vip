@@ -322,13 +322,21 @@ async def receive_payment_proof(update, context):
     if payment[8] not in ["awaiting_proof", "pending"]:
         await update.message.reply_text("This payment has already been processed.")
         context.user_data.clear(); return
+
+    # BUGFIX: track whether the proof came in as a compressed Photo or as a
+    # Document (file). Telegram's sendPhoto rejects a document-type file_id,
+    # which was silently breaking the admin notification whenever a user
+    # uploaded their screenshot as a "file" instead of a photo.
+    is_document = False
     if update.message.photo:
         file_id = update.message.photo[-1].file_id
     elif update.message.document and update.message.document.mime_type and update.message.document.mime_type.startswith("image/"):
         file_id = update.message.document.file_id
+        is_document = True
     else:
         await update.message.reply_text("📸 Please send the payment screenshot as an image/photo.")
         return
+
     save_screenshot(payment_id, file_id)
     update_payment_status(payment_id, "proof_submitted")
     context.user_data["awaiting_proof"] = False
@@ -378,9 +386,24 @@ Please verify the payment.
         InlineKeyboardButton("❌ REJECT", callback_data=f"reject:{payment_id}")
     ]])
     try:
-        await context.bot.send_photo(chat_id=ADMIN_ID, photo=file_id, caption=admin_text, reply_markup=kb)
+        if is_document:
+            # A document's file_id can't be sent through send_photo.
+            await context.bot.send_document(chat_id=ADMIN_ID, document=file_id, caption=admin_text, reply_markup=kb)
+        else:
+            await context.bot.send_photo(chat_id=ADMIN_ID, photo=file_id, caption=admin_text, reply_markup=kb)
     except Exception as e:
         logger.exception("Failed to send payment proof to admin: %s", e)
+        # Fallback: at minimum, get a text alert to the admin so the
+        # payment doesn't go unnoticed even if the media itself failed.
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_text + "\n⚠️ Could not attach the screenshot automatically. "
+                                   f"Check payment #{payment_id} in the database.",
+                reply_markup=kb
+            )
+        except Exception as e2:
+            logger.exception("Fallback admin text notification also failed: %s", e2)
 
 async def create_vip_links(context, payment_id):
     links = []
@@ -434,16 +457,20 @@ async def approve_payment(update, context):
     q = update.callback_query
     if q.from_user.id != ADMIN_ID:
         await q.answer("❌ You are not authorized.", show_alert=True); return
-    await q.answer()
     try: payment_id = int(q.data.split(":")[1])
-    except Exception: return
+    except Exception:
+        await q.answer(); return
     payment = get_payment(payment_id)
     if not payment:
-        await q.message.reply_text("❌ Payment not found."); return
+        await q.answer(); await q.message.reply_text("❌ Payment not found."); return
+    # BUGFIX: a callback_query can only be answered once. The old code
+    # answered unconditionally, then tried to answer again in these
+    # branches, which raised and could break the flow silently.
     if payment[8] == "approved":
         await q.answer("Already approved.", show_alert=True); return
     if payment[8] == "rejected":
         await q.answer("This payment was already rejected.", show_alert=True); return
+    await q.answer()
     try:
         await send_vip_access(context, payment[1], payment_id)
         update_payment_status(payment_id, "approved")
@@ -463,13 +490,16 @@ async def reject_payment(update, context):
     q = update.callback_query
     if q.from_user.id != ADMIN_ID:
         await q.answer("❌ You are not authorized.", show_alert=True); return
-    await q.answer()
     try: payment_id = int(q.data.split(":")[1])
-    except Exception: return
+    except Exception:
+        await q.answer(); return
     payment = get_payment(payment_id)
-    if not payment: return
+    if not payment:
+        await q.answer(); return
+    # BUGFIX: same double-answer issue as approve_payment.
     if payment[8] in ["approved", "rejected"]:
         await q.answer("Payment already processed.", show_alert=True); return
+    await q.answer()
     update_payment_status(payment_id, "rejected")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("📩 CONTACT SUPPORT", url=SUPPORT_URL)]])
     try:
@@ -533,15 +563,23 @@ CATALOGUE = {
 }
 
 async def catalogue(update, context):
-    q = update.callback_query; await q.answer()
+    # BUGFIX: this used to assume it was always invoked from a button press
+    # (update.callback_query), which crashed with AttributeError whenever it
+    # was called directly from the /catalogue command (no callback_query).
+    q = update.callback_query
     buttons = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat:{cat}")] for cat in CATALOGUE]
     buttons.append([InlineKeyboardButton("⬅️ BACK", callback_data="back_start")])
-    await q.edit_message_text("""📚 VIP COURSES
+    text = """📚 VIP COURSES
 
 VIP Courses are structured across 40+ sub-topics.
 
 Choose a category below:
-""", reply_markup=InlineKeyboardMarkup(buttons))
+"""
+    if q:
+        await q.answer()
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 async def catalogue_category(update, context):
     q = update.callback_query; await q.answer()
